@@ -1,49 +1,57 @@
 package com.example.examenfinalpo;
 
+import androidx.appcompat.app.AppCompatActivity;
+
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.util.SparseArray;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
+import android.widget.Toast;
 
-import androidx.appcompat.app.AppCompatActivity;
+
 
 import com.google.api.client.extensions.android.json.AndroidJsonFactory;
 import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.*;
 import com.google.api.services.vision.v1.Vision;
 import com.google.api.services.vision.v1.VisionRequestInitializer;
 import com.google.api.services.vision.v1.model.AnnotateImageRequest;
 import com.google.api.services.vision.v1.model.AnnotateImageResponse;
 import com.google.api.services.vision.v1.model.BatchAnnotateImagesRequest;
 import com.google.api.services.vision.v1.model.BatchAnnotateImagesResponse;
-import com.google.api.services.vision.v1.model.EntityAnnotation;
 import com.google.api.services.vision.v1.model.Feature;
 import com.google.api.services.vision.v1.model.Image;
 import com.google.api.services.vision.v1.model.WebDetection;
 import com.google.api.services.vision.v1.model.WebEntity;
-import com.google.api.services.vision.v1.model.WebImage;
-import com.google.api.services.vision.v1.model.WebLabel;
-import com.google.api.services.vision.v1.model.WebPage;
 
-import com.google.*;
 
 
 import org.apache.commons.io.output.ByteArrayOutputStream;
+
+
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
-import java.util.Locale;
 
-public class MainActivity extends AppCompatActivity {
+import java.util.List;
+
+
+public class MainActivity extends AppCompatActivity{
 
     ImageView imageView;
     Button button;
@@ -51,6 +59,7 @@ public class MainActivity extends AppCompatActivity {
     public ImageView imagen;
     private static final int PICK_IMAGE = 100;
     Uri imageUri;
+    String descripcion="";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,63 +70,80 @@ public class MainActivity extends AppCompatActivity {
         Vision.Builder visionBuilder = new Vision.Builder(new NetHttpTransport(),
                 new AndroidJsonFactory(),  null);
         visionBuilder.setVisionRequestInitializer(new
-                VisionRequestInitializer("Api key"));
+                VisionRequestInitializer("AIzaSyCV_ADpVQp5_K1CQ98gc6KeOVq5p1sjqKQ"));
         vision = visionBuilder.build();
 
         imageView=(ImageView)findViewById(R.id.imageView);
         button=(Button)findViewById(R.id.BtnCargarImagen);
 
     }
-        public static void DetetarWeb(String filePath, PrintStream out) throws Exception,
-                IOException {
-            List<AnnotateImageRequest> requests = new ArrayList<>();
+    public void botonIdentificar(View view){
+        AsyncTask.execute(new Runnable() {
+            @Override
+            public void run() {
+                imageView=(ImageView) findViewById(R.id.imageView);
+                BitmapDrawable drawable = (BitmapDrawable) imageView.getDrawable();
+                Bitmap bitmap = drawable.getBitmap();
+                bitmap = scaleBitmapDown(bitmap,1200 );
+                ByteArrayOutputStream stream = new ByteArrayOutputStream();
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream);
+                byte[] imageInByte = stream.toByteArray();
+                //paso 1
+                Image inputImage = new Image();
+                inputImage.encodeContent(imageInByte);
+                //paso 2 Feature
+                Feature desiredFeature = new Feature();
+                desiredFeature.setType("WEB_DETECTION");
 
-            ByteString imgBytes = ByteString.readFrom(new FileInputStream(filePath));
+                // paso 3 arma la sulicitud(es)
+                AnnotateImageRequest request = new AnnotateImageRequest();
+                request.setImage(inputImage);
 
-            Image img = Image.newBuilder().setContent(imgBytes).build();
-            Feature feat = Feature.newBuilder().setType(Type.WEB_DETECTION).build();
-            AnnotateImageRequest request =
-                    AnnotateImageRequest.newBuilder().addFeatures(feat).setImage(img).build();
-            requests.add(request);
+                request.setFeatures(Arrays.asList(desiredFeature));
+                BatchAnnotateImagesRequest batchRequest = new
+                        BatchAnnotateImagesRequest();
+                batchRequest.setRequests(Arrays.asList(request));
+                //paso 4 asignamos al control visionbuilder la solicitud
 
-            try (ImageAnnotatorClient client = ImageAnnotatorClient.create()) {
-                BatchAnnotateImagesResponse response = client.batchAnnotateImages(requests);
-                List<AnnotateImageResponse> responses = response.getResponsesList();
+                try {
+                    Vision.Images.Annotate  annotateRequest =
+                            vision.images().annotate(batchRequest);
+                    //paso 5 enviamos la solicitud
+                    annotateRequest.setDisableGZipContent(true);
+                    BatchAnnotateImagesResponse batchResponse =
+                            annotateRequest.execute();
 
-                for (AnnotateImageResponse res : responses) {
-                    if (res.hasError()) {
-                        out.printf("Error: %s\n", res.getError().getMessage());
-                        return;
-                    }
-                    WebDetection annotation = res.getWebDetection();
-                    out.println("Entity:Id:Score");
-                    out.println("===============");
-                    for (WebEntity entity : annotation.getWebEntitiesList()) {
-                        out.println(entity.getDescription() + " : " + entity.getEntityId() + " : "
-                                + entity.getScore());
-                    }
-                    for (WebLabel label : annotation.getBestGuessLabelsList()) {
-                        out.format("\nBest guess label: %s", label.getLabel());
-                    }
-                    out.println("\nPages with matching images: Score\n==");
-                    for (WebPage page : annotation.getPagesWithMatchingImagesList()) {
-                        out.println(page.getUrl() + " : " + page.getScore());
-                    }
-                    out.println("\nPages with partially matching images: Score\n==");
-                    for (WebImage image : annotation.getPartialMatchingImagesList()) {
-                        out.println(image.getUrl() + " : " + image.getScore());
-                    }
-                    out.println("\nPages with fully matching images: Score\n==");
-                    for (WebImage image : annotation.getFullMatchingImagesList()) {
-                        out.println(image.getUrl() + " : " + image.getScore());
-                    }
-                    out.println("\nPages with visually similar images: Score\n==");
-                    for (WebImage image : annotation.getVisuallySimilarImagesList()) {
-                        out.println(image.getUrl() + " : " + image.getScore());
-                    }
+                    //paso 6 obtener la respuesta
+                    WebDetection annotation = batchResponse.getResponses().get(0).getWebDetection();
+                    descripcion="";
+                    List<WebEntity> arrayList=annotation.getWebEntities();
+                    descripcion=arrayList.get(0).getDescription();
+                    //LlamarWebService(descripcion);
+
+                    final String resultado=descripcion;
+
+                    //paso 7 asignar la UI
+                   runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            TextView imageDetail = (TextView)findViewById(R.id.textView2);
+                            imageDetail.setText(resultado);
+                            Intent intent = new Intent(MainActivity.this, Informacion.class);
+                            Bundle b = new Bundle();
+                            b.putString("pd",descripcion);
+                            intent.putExtras(b);
+                            startActivity(intent);
+
+                        }
+                    });
+                    //return text.getText();
+
+                } catch (IOException e) {
+                    e.printStackTrace();
                 }
             }
-        }
+        });
+    }
     private Bitmap scaleBitmapDown(Bitmap bitmap, int maxDimension) {
         int originalWidth = bitmap.getWidth();
         int originalHeight = bitmap.getHeight();
@@ -136,7 +162,6 @@ public class MainActivity extends AppCompatActivity {
     public void botonClickCargar(View view){
         openGallery();
     }
-
     private void openGallery(){
         Intent gallery = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.INTERNAL_CONTENT_URI);
         startActivityForResult(gallery, PICK_IMAGE);
@@ -149,4 +174,5 @@ public class MainActivity extends AppCompatActivity {
             imagen.setImageURI(imageUri);
         }
     }
+
 }
